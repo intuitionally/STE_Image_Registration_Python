@@ -105,6 +105,17 @@ def convert_polar(xyz):
     return np.degrees(np.arctan2(np.sqrt(xy), xyz[:, 2]))  # for elevation angle defined from Z-axis down
 
 
+def test_plot(pts, colors):
+    # pts = pts[:, 0, :]
+    x_list = pts[:, 0]
+    y_list = pts[:, 1]
+    # colors = colors[:, 0, :]
+
+    ax = plt.axes()
+    ax.scatter(x_list, y_list, c=colors / 255, s=0.01)
+    plt.show()
+
+
 for i in range(0, 89, 30):
     ry = i
 
@@ -158,6 +169,7 @@ for i in range(0, 89, 30):
     # Get keeper colors
     colorsKeep = world_colors[keep]
 
+    # test_plot(projectedPoints, colorsKeep)
     wpts_keep_az = convert_polar(wptsKeep) - 90  # just getting theta
     # convert negative to positive
     wpts_keep_az[wpts_keep_az < 0] += 360
@@ -178,10 +190,13 @@ for i in range(0, 89, 30):
     wpts_keep_az = wpts_keep_az[keep_indices]
     projected_points = projectedPoints[keep_indices]
     colorsKeep = colorsKeep[keep_indices]
+    print(f'shape: {colorsKeep.shape}')
+    colorsKeep = colorsKeep[:, 0, :]
+
     # print(wpts_keep_az[0:20])
     projected_points = projected_points[:, 0, :]
     x_list = projected_points[:, 0]
-    y_list = projected_points[:, x1]
+    y_list = projected_points[:, 1]
     # fig = plt.figure()
     # ax = fig.add_subplot()
     ax = plt.axes()
