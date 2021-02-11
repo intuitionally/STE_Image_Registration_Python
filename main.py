@@ -1,13 +1,16 @@
 import cv2
+from PIL import Image
 from math import cos, degrees, sin, radians
 import matplotlib.pyplot as plt
 from mpl_toolkits import mplot3d
 import numpy as np
 import open3d as o3d
+import tifffile
 
 GINGERBREAD = 1
 SIMPLE = 2
 model = GINGERBREAD
+
 
 if model == GINGERBREAD:
     # reading point cloud into numpy array
@@ -17,10 +20,15 @@ if model == GINGERBREAD:
     fname_stub = 'output/gingerbread'
 
     # first three columms are point positions
-    world_points = point_cloud[:, :3].astype(np.float)
+    world_points = point_cloud[:, :3].astype(np.float64)
 
     # last three columns are point colors
-    world_colors = point_cloud[:, 3:6]
+    world_colors = point_cloud[:, 3:6].astype(np.float64)
+
+    # pcd = o3d.geometry.PointCloud()
+    # pcd.points = o3d.utility.Vector3dVector(world_points)
+    # pcd.colors = o3d.utility.Vector3dVector(world_colors/255)
+    # o3d.visualization.draw_geometries([pcd])
 
     # setting known values
     focal_length = 400.0
@@ -32,7 +40,7 @@ if model == GINGERBREAD:
     y_points = point_cloud[:, 1]
     z_points = point_cloud[:, 2]
 
-    t_vec = np.array([0, 0, 10.0]).astype(np.float)
+    t_vec = np.array([[0, 0, 10.0]]).astype(np.float)
 
 elif model == SIMPLE:
     fname_stub = 'output/simple'
@@ -50,11 +58,19 @@ elif model == SIMPLE:
                             [0, 255, 0],  # green
                             [0, 0, 255]])  # blue
 
+    # pcd = o3d.geometry.PointCloud()
+    # pcd.points = o3d.utility.Vector3dVector(world_points)
+    # pcd.colors = o3d.utility.Vector3dVector(world_colors)
+    # o3d.visualization.draw_geometries([pcd])
+
     x_points = [i[0] for i in world_points]
     y_points = [i[1] for i in world_points]
     z_points = [i[2] for i in world_points]
 
-    t_vec = np.array([0, 0, 0]).astype(np.float)
+    t_vec = np.array([[0, 0, 0]]).astype(np.float)
+
+# field of view
+fov = np.degrees(np.arctan2(image_j/2, focal_length))
 
 # getting the midpoints from each array
 xMid = np.mean([np.min(x_points), np.max(x_points)])
@@ -81,6 +97,14 @@ rx = -90
 ry = 0
 rz = 0
 
+
+# make sure array shape is nx3
+def convert_polar(xyz):
+    ptsnew = np.hstack((xyz, np.zeros(xyz.shape)))
+    xy = xyz[:, 0]**2 + xyz[:, 1]**2
+    return np.degrees(np.arctan2(np.sqrt(xy), xyz[:, 2]))  # for elevation angle defined from Z-axis down
+
+
 for i in range(0, 89, 30):
     ry = i
 
@@ -102,13 +126,12 @@ for i in range(0, 89, 30):
     # R = np.identity(3)
 
     # Get camera position to use in the code below to calculate depth.
-    camPos = (np.matmul(R, t_vec))
+    camPos = np.linalg.pinv(np.matmul(R, np.negative(np.linalg.pinv(t_vec))))
 
     # get rotation vector
     r_vec = cv2.Rodrigues(R)[0].astype(np.float)
 
     # This is the money function.  Project world points to image points.
-    # world_points = np.swapaxes(world_points, 0, 1)
     projected_pts, jacobian = cv2.projectPoints(world_points, r_vec, t_vec, intrinsics, distCoeffs=0)
     projected_pts = projected_pts[0:, 0, 0:]
 
@@ -123,7 +146,7 @@ for i in range(0, 89, 30):
     # Find indices with j <= image_j
     keep3 = np.where(projected_pts[0:, 0] <= image_j)
 
-    # Logical AND the three sets above to get our keeper indicies
+    # find the intersection of the keep indices
     keep = np.intersect1d(keep1, np.intersect1d(keep2, keep3))
 
     # Get keeper XYZ
@@ -135,8 +158,30 @@ for i in range(0, 89, 30):
     # Get keeper colors
     colorsKeep = world_colors[keep]
 
-    x_list = projectedPoints[0:, 0]
-    y_list = projectedPoints[0:, 1]
+    wpts_keep_az = convert_polar(wptsKeep) - 90  # just getting theta
+    # convert negative to positive
+    wpts_keep_az[wpts_keep_az < 0] += 360
+
+    # fov extents
+    fov_low = i - fov
+    fov_high = i + fov
+
+    # monkey business if low is negative
+    if fov_low < 0:
+        wpts_keep_az[wpts_keep_az >= 360 + fov_low] -= 360
+
+    # monkey business if high is over 360
+    if fov_high > 360:
+        wpts_keep_az[wpts_keep_az <= fov_high - 360] += 360
+
+    keep_indices = np.argwhere(np.logical_and((fov_low <= wpts_keep_az), (wpts_keep_az <= fov_high)))
+    wpts_keep_az = wpts_keep_az[keep_indices]
+    projected_points = projectedPoints[keep_indices]
+    colorsKeep = colorsKeep[keep_indices]
+    # print(wpts_keep_az[0:20])
+    projected_points = projected_points[:, 0, :]
+    x_list = projected_points[:, 0]
+    y_list = projected_points[:, x1]
     # fig = plt.figure()
     # ax = fig.add_subplot()
     ax = plt.axes()
@@ -144,4 +189,8 @@ for i in range(0, 89, 30):
     ax.scatter(x_list, y_list, c=colorsKeep/255, s=0.01)
 
     plt.show()
+
+    # tifffile.imsave
+
+
 
