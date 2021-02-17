@@ -5,16 +5,21 @@ import matplotlib.pyplot as plt
 from mpl_toolkits import mplot3d
 import numpy as np
 import open3d as o3d
-import tifffile
+import tifffile as tiff
 
 GINGERBREAD = 1
 SIMPLE = 2
 model = GINGERBREAD
 
+write_depth = True
+write_xyz= True
+write_az = True
+
 
 if model == GINGERBREAD:
     # reading point cloud into numpy array
-    gb_file = "C:\\Users\\rdgrlcl9\\Documents\\STE_Python\\gb_house\\gbhouse.txt"
+    # gb_file = "C:\\Users\\rdgrlcl9\\Documents\\STE_Python\\gb_house\\gbhouse.txt"
+    gb_file = "C:\\Users\\rdgrldkb\\Documents\\gbhouse.txt"
     point_cloud = np.loadtxt(gb_file).astype(np.float)
 
     fname_stub = 'output/gingerbread'
@@ -115,97 +120,153 @@ def test_plot(pts, colors):
     ax.scatter(x_list, y_list, c=colors / 255, s=0.01)
     plt.show()
 
+def main():
+    for i in range(0, 359, 30):
+        # base filename
+        fname_base = f'{fname_stub}_{i}'
 
-for i in range(0, 89, 30):
-    ry = i
+        # synthetic image file name
+        fname_syn_img = f'{fname_base}_rgb.tif'
 
-    Rx = np.array([[1, 0, 0],
-                  [0, cos(radians(rx)), -sin(radians(rx))],
-                  [0, sin(radians(rx)), cos(radians(rx))]])
+        # Image name to contain XYZ coordinates for each pixel in the
+        # synthetic image.
+        fname_xyz_img = f'{fname_base}_xyz.tif'
 
-    Ry = np.array([[cos(radians(ry)), 0, sin(radians(ry))],
-                   [0, 1, 0],
-                   [-sin(radians(ry)), 0, cos(radians(ry))]])
+        # Image name to contain depth values.
+        fname_depth_img = f'{fname_base}_depth.tif'
 
-    Rz = np.array([[cos(radians(rz)), -sin(radians(rz)), 0],
-                   [sin(radians(rz)), cos(radians(rz)), 0],
-                   [0, 0, 1.0]])
+        # Image name to contain azimuth values.
+        fname_az_img = f'{fname_base}_az.tif'
 
-    R = np.matmul(np.matmul(Rz, Ry), Rx)
+        ry = i
 
-    # sample rotation matrix = I
-    # R = np.identity(3)
+        Rx = np.array([[1, 0, 0],
+                      [0, cos(radians(rx)), -sin(radians(rx))],
+                      [0, sin(radians(rx)), cos(radians(rx))]])
 
-    # Get camera position to use in the code below to calculate depth.
-    camPos = np.linalg.pinv(np.matmul(R, np.negative(np.linalg.pinv(t_vec))))
+        Ry = np.array([[cos(radians(ry)), 0, sin(radians(ry))],
+                       [0, 1, 0],
+                       [-sin(radians(ry)), 0, cos(radians(ry))]])
 
-    # get rotation vector
-    r_vec = cv2.Rodrigues(R)[0].astype(np.float)
+        Rz = np.array([[cos(radians(rz)), -sin(radians(rz)), 0],
+                       [sin(radians(rz)), cos(radians(rz)), 0],
+                       [0, 0, 1.0]])
 
-    # This is the money function.  Project world points to image points.
-    projected_pts, jacobian = cv2.projectPoints(world_points, r_vec, t_vec, intrinsics, distCoeffs=0)
-    projected_pts = projected_pts[0:, 0, 0:]
+        R = np.matmul(np.matmul(Rz, Ry), Rx)
 
-    # Find good points inside the window.  These will be points with:
-    # 1 <= i <= image_i *and* 1 <= j <= image_j.
-    # Find indices greater than 1 for i,j
-    keep1 = np.where(np.min(projected_pts, axis=1) >= 1.0)
+        # sample rotation matrix = I
+        # R = np.identity(3)
 
-    # Find indices with i <= image_i
-    keep2 = np.where(projected_pts[0:, 1] <= image_i)
+        # Get camera position to use in the code below to calculate depth.
+        camPos = np.linalg.pinv(np.matmul(R, np.negative(np.linalg.pinv(t_vec))))
 
-    # Find indices with j <= image_j
-    keep3 = np.where(projected_pts[0:, 0] <= image_j)
+        # get rotation vector
+        r_vec = cv2.Rodrigues(R)[0].astype(np.float)
 
-    # find the intersection of the keep indices
-    keep = np.intersect1d(keep1, np.intersect1d(keep2, keep3))
+        # This is the money function.  Project world points to image points.
+        projected_pts, jacobian = cv2.projectPoints(world_points, r_vec, t_vec, intrinsics, distCoeffs=0)
+        projected_pts = projected_pts[0:, 0, 0:]
 
-    # Get keeper XYZ
-    wptsKeep = world_points[keep]
+        # Find good points inside the window.  These will be points with:
+        # 1 <= i <= image_i *and* 1 <= j <= image_j.
+        # Find indices greater than 1 for i,j
+        keep1 = np.where(np.min(projected_pts, axis=1) >= 1.0)
 
-    # Get keeper projected i,j points
-    projectedPoints = projected_pts[keep]
+        # Find indices with i <= image_i
+        keep2 = np.where(projected_pts[0:, 1] <= image_i)
 
-    # Get keeper colors
-    colorsKeep = world_colors[keep]
+        # Find indices with j <= image_j
+        keep3 = np.where(projected_pts[0:, 0] <= image_j)
 
-    # test_plot(projectedPoints, colorsKeep)
-    wpts_keep_az = convert_polar(wptsKeep) - 90  # just getting theta
-    # convert negative to positive
-    wpts_keep_az[wpts_keep_az < 0] += 360
+        # find the intersection of the keep indices
+        keep = np.intersect1d(keep1, np.intersect1d(keep2, keep3))
 
-    # fov extents
-    fov_low = i - fov
-    fov_high = i + fov
+        # Get keeper XYZ
+        wptsKeep = world_points[keep]
 
-    # monkey business if low is negative
-    if fov_low < 0:
-        wpts_keep_az[wpts_keep_az >= 360 + fov_low] -= 360
+        # Get keeper projected i,j points
+        projectedPoints = projected_pts[keep]
 
-    # monkey business if high is over 360
-    if fov_high > 360:
-        wpts_keep_az[wpts_keep_az <= fov_high - 360] += 360
+        # Get keeper colors
+        colorsKeep = world_colors[keep]
 
-    keep_indices = np.argwhere(np.logical_and((fov_low <= wpts_keep_az), (wpts_keep_az <= fov_high)))
-    wpts_keep_az = wpts_keep_az[keep_indices]
-    projected_points = projectedPoints[keep_indices]
-    colorsKeep = colorsKeep[keep_indices]
-    print(f'shape: {colorsKeep.shape}')
-    colorsKeep = colorsKeep[:, 0, :]
+        # test_plot(projectedPoints, colorsKeep)
 
-    # print(wpts_keep_az[0:20])
-    projected_points = projected_points[:, 0, :]
-    x_list = projected_points[:, 0]
-    y_list = projected_points[:, 1]
-    # fig = plt.figure()
-    # ax = fig.add_subplot()
-    ax = plt.axes()
+        # POLAR STUFFFFF
+        wpts_keep_az = convert_polar(wptsKeep) - 90  # just getting theta
+        print(f'length of wpts_keep_az: {len(wpts_keep_az)}')
 
-    ax.scatter(x_list, y_list, c=colorsKeep/255, s=0.01)
+        # convert negative to positive
+        wpts_keep_az[wpts_keep_az < 0] += 360
+
+        # fov extents
+        fov_low = i - fov
+        fov_high = i + fov
+
+        # monkey business if low is negative
+        if fov_low < 0:
+            wpts_keep_az[wpts_keep_az >= 360 + fov_low] -= 360
+
+        # monkey business if high is over 360
+        if fov_high > 360:
+            wpts_keep_az[wpts_keep_az <= fov_high - 360] += 360
+        print(f'fov_low: {fov_low}, fov_high: {fov_high}, {wpts_keep_az >= fov_low}, {wpts_keep_az <= fov_high}')
+        keep_indices = np.argwhere(np.logical_and((wpts_keep_az >= fov_low), (wpts_keep_az <= fov_high)))
+        # TODO: talk to Jeff about smol slice
+        print(f'length of keep_indices: {len(keep_indices)}')
+
+        wpts_keep_az = wpts_keep_az[keep_indices]
+        wptsKeep = wptsKeep[keep_indices]
+        projected_points = projectedPoints[keep_indices]
+        colorsKeep = colorsKeep[keep_indices]
+        print(f'shape of projected_points: {projected_points.shape}')
+        test_plot(i, projected_points, colorsKeep)
+
+        colorsKeep = colorsKeep[:, 0, :]
+
+        # print(wpts_keep_az[0:20])
+        projected_points = projected_points[:, 0, :]
+        x_list = projected_points[:, 0]
+        y_list = projected_points[:, 1]
+        # fig = plt.figure()
+        # ax = fig.add_subplot()
+
+        # ax = plt.axes()
+
+        # ax.scatter(x_list, y_list, c=colorsKeep/255, s=0.01)
+        # ax.scatter(projected_pts[:, 0], projected_pts[:, 1], c=world_colors / 255, s=0.01)
+
+        # plt.show()
+
+
+
+        # tifffile.imsave
+
+        # Write out images.
+        # imwrite(img,fnameImg);
+        # if write_xyz_img:
+        #     tiff.imwrite('imgXYZ',fnameXYZImg)
+        # if write_depth:
+        #     tiff.imwrite('depth',fnameDepthImg)
+        # if write_az:
+        #     tiff.imwrite('imgAz',fnameAzImg)
+
+        # This function writes out a TIFF with 64-bit floating point numbers.
+        # The standard Matlab image write functions can't do this.
+        # function writeXYZ(data,fname)
+        # t = Tiff(fname, 'w');
+        # tagstruct.ImageLength = size(data, 1);
+        # tagstruct.ImageWidth = size(data, 2);
+        # tagstruct.Compression = Tiff.Compression.None;
+        # tagstruct.SampleFormat = Tiff.SampleFormat.IEEEFP;
+        # tagstruct.Photometric = Tiff.Photometric.LinearRaw;
+        # tagstruct.BitsPerSample = 64;
+        # tagstruct.SamplesPerPixel = size(data,3);
+        # tagstruct.PlanarConfiguration = Tiff.PlanarConfiguration.Chunky;
+        # t.setTag(tagstruct);
+        # t.write(data);
+        # t.close();
 
     plt.show()
-
-    # tifffile.imsave
-
 
 
