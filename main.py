@@ -124,7 +124,7 @@ def test_plot(num, pts, colors):
 
 
 def main():
-    for i in range(0, 359, 30):
+    for i in range(0, 91, 30):
         # base filename
         fname_base = f'{fname_stub}_{i}'
 
@@ -241,34 +241,49 @@ def main():
 
         # plt.show()
 
+        for n in range(0, np.size(projected_pts, 0)):
+            # Get current pixel i,j
+            ii = round(projected_pts[n, 1])
 
+            jj = round(projected_pts[n, 0])
+
+            # Compute delta XYZ from the camera to the current point.
+
+            d = np.linalg.norm(camPos[0] - wptsKeep[n, :])
+
+            # If the current depth is greater than the depth map for i,j,
+            # continue with next point.
+
+            if d > img_depth[ii, jj]:
+                continue
+
+            # If we get here we have a good point.
+            ii = image_i - ii
+            # Update depth map.
+            img_depth[ii, jj] = d
+
+            # Update RGB image.
+            img[ii, jj, :] = colorsKeep[n, :]
+
+            # Update XYZ image.
+            imgXYZ[ii, jj, :] = wptsKeep[n, :] + offsets
+
+            # Update azimuth image.
+            # img_az[ii,jj] = wptsKeepAz[n]
 
         # tifffile.imsave
 
         # Write out images.
         # imwrite(img,fnameImg);
-        # if write_xyz_img:
-        #     tiff.imwrite('imgXYZ',fnameXYZImg)
-        # if write_depth:
-        #     tiff.imwrite('depth',fnameDepthImg)
-        # if write_az:
-        #     tiff.imwrite('imgAz',fnameAzImg)
 
-        # This function writes out a TIFF with 64-bit floating point numbers.
-        # The standard Matlab image write functions can't do this.
-        # function writeXYZ(data,fname)
-        # t = Tiff(fname, 'w');
-        # tagstruct.ImageLength = size(data, 1);
-        # tagstruct.ImageWidth = size(data, 2);
-        # tagstruct.Compression = Tiff.Compression.None;
-        # tagstruct.SampleFormat = Tiff.SampleFormat.IEEEFP;
-        # tagstruct.Photometric = Tiff.Photometric.LinearRaw;
-        # tagstruct.BitsPerSample = 64;
-        # tagstruct.SamplesPerPixel = size(data,3);
-        # tagstruct.PlanarConfiguration = Tiff.PlanarConfiguration.Chunky;
-        # t.setTag(tagstruct);
-        # t.write(data);
-        # t.close();
+        tiff.imwrite(fname_img, img)
+        if write_xyz:
+            tiff.imwrite(fname_xyz_img, imgXYZ, dtype=np.float64)
+        if write_depth:
+            tiff.imwrite(fname_depth_img, img_depth, dtype=np.float64)
+        if write_az:
+            tiff.imwrite(fname_az_img, img_az, dtype=np.float64)
+
 
     plt.show()
 
