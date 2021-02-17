@@ -76,6 +76,7 @@ elif model == SIMPLE:
 
 # field of view
 fov = np.degrees(np.arctan2(image_j/2, focal_length))
+print(f'fov: {fov}')
 
 # getting the midpoints from each array
 xMid = np.mean([np.min(x_points), np.max(x_points)])
@@ -105,20 +106,22 @@ rz = 0
 
 # make sure array shape is nx3
 def convert_polar(xyz):
-    ptsnew = np.hstack((xyz, np.zeros(xyz.shape)))
-    xy = xyz[:, 0]**2 + xyz[:, 1]**2
-    return np.degrees(np.arctan2(np.sqrt(xy), xyz[:, 2]))  # for elevation angle defined from Z-axis down
+    x = xyz[:, 0]
+    y = xyz[:, 1]
+    return np.degrees(np.arctan2(y, x))  # theta probably
 
 
-def test_plot(pts, colors):
-    # pts = pts[:, 0, :]
+def test_plot(num, pts, colors):
+    pts = pts[:, 0, :]
     x_list = pts[:, 0]
     y_list = pts[:, 1]
-    # colors = colors[:, 0, :]
+    colors = colors[:, 0, :]
 
+    plt.figure(num)
     ax = plt.axes()
-    ax.scatter(x_list, y_list, c=colors / 255, s=0.01)
-    plt.show()
+    ax.scatter(x_list, y_list, c=colors/255, s=0.01)
+    # plt.show()
+
 
 def main():
     for i in range(0, 359, 30):
@@ -270,3 +273,5 @@ def main():
     plt.show()
 
 
+if __name__ == '__main__':
+    main()
