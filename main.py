@@ -1,10 +1,11 @@
 import cv2
 from PIL import Image
-from math import cos, degrees, sin, radians
+from math import cos, dist, sin, radians
 import matplotlib.pyplot as plt
 from mpl_toolkits import mplot3d
 import numpy as np
 import open3d as o3d
+from pathlib import Path
 import tifffile as tiff
 
 GINGERBREAD = 1
@@ -85,6 +86,8 @@ zMid = np.mean([np.min(z_points), np.max(z_points)])
 
 offsets = [xMid, yMid, zMid]
 
+# world_points -= offsets
+
 # intrinsics matrix
 # f_x skew=0 c_x
 # 0   f_y  c_y
@@ -112,10 +115,10 @@ def convert_polar(xyz):
 
 
 def test_plot(num, pts, colors):
-    pts = pts[:, 0, :]
+    # pts = pts[:, 0, :]
     x_list = pts[:, 0]
     y_list = pts[:, 1]
-    colors = colors[:, 0, :]
+    # colors = colors[:, 0, :]
 
     plt.figure(num)
     ax = plt.axes()
@@ -127,19 +130,28 @@ def main():
     for i in range(0, 91, 30):
         # base filename
         fname_base = f'{fname_stub}_{i}'
-
-        # synthetic image file name
-        fname_syn_img = f'{fname_base}_rgb.tif'
+        fname_img = Path(f'{fname_base}.tif')
 
         # Image name to contain XYZ coordinates for each pixel in the
         # synthetic image.
-        fname_xyz_img = f'{fname_base}_xyz.tif'
+        fname_xyz_img = Path(f'{fname_base}_xyz.tif')
 
         # Image name to contain depth values.
-        fname_depth_img = f'{fname_base}_depth.tif'
+        fname_depth_img = Path(f'{fname_base}_depth.tif')
 
         # Image name to contain azimuth values.
-        fname_az_img = f'{fname_base}_az.tif'
+        fname_az_img = Path(f'{fname_base}_az.tif')
+
+        # remove files if they exist
+        fname_img.unlink(missing_ok=True)
+        fname_xyz_img.unlink(missing_ok=True)
+        fname_depth_img.unlink(missing_ok=True)
+        fname_az_img.unlink(missing_ok=True)
+
+        img = np.zeros(shape=(image_i, image_j, 3), dtype=np.uint8)
+        imgXYZ = np.empty(shape=(image_i, image_j, 3))
+        img_depth = np.array(np.ones((image_i, image_j))*np.inf)
+        img_az = np.empty(shape=(image_i, image_j))
 
         ry = i
 
@@ -188,49 +200,49 @@ def main():
         wptsKeep = world_points[keep]
 
         # Get keeper projected i,j points
-        projectedPoints = projected_pts[keep]
+        projected_pts = projected_pts[keep]
 
         # Get keeper colors
         colorsKeep = world_colors[keep]
 
-        # test_plot(projectedPoints, colorsKeep)
+        # test_plot(i, projected_pts, colorsKeep)
 
         # POLAR STUFFFFF
-        wpts_keep_az = convert_polar(wptsKeep) - 90  # just getting theta
-        print(f'length of wpts_keep_az: {len(wpts_keep_az)}')
+        # wpts_keep_az = convert_polar(wptsKeep) - 90  # just getting theta
+        # print(f'length of wpts_keep_az: {len(wpts_keep_az)}')
+        #
+        # # convert negative to positive
+        # wpts_keep_az[wpts_keep_az < 0] += 360
+        #
+        # # fov extents
+        # fov_low = i - fov
+        # fov_high = i + fov
+        #
+        # # monkey business if low is negative
+        # if fov_low < 0:
+        #     wpts_keep_az[wpts_keep_az >= 360 + fov_low] -= 360
+        #
+        # # monkey business if high is over 360
+        # if fov_high > 360:
+        #     wpts_keep_az[wpts_keep_az <= fov_high - 360] += 360
+        # print(f'fov_low: {fov_low}, fov_high: {fov_high}, {wpts_keep_az >= fov_low}, {wpts_keep_az <= fov_high}')
+        # keep_indices = np.argwhere(np.logical_and((wpts_keep_az >= fov_low), (wpts_keep_az <= fov_high)))
+        # # TODO: talk to Jeff about smol slice
+        # print(f'length of keep_indices: {len(keep_indices)}')
+        #
+        # wpts_keep_az = wpts_keep_az[keep_indices]
+        # wptsKeep = wptsKeep[keep_indices]
+        # projected_pts = projected_pts[keep_indices]
+        # colorsKeep = colorsKeep[keep_indices]
+        # print(f'shape of projected_points: {projected_pts.shape}')
+        test_plot(i, projected_pts, colorsKeep)
 
-        # convert negative to positive
-        wpts_keep_az[wpts_keep_az < 0] += 360
-
-        # fov extents
-        fov_low = i - fov
-        fov_high = i + fov
-
-        # monkey business if low is negative
-        if fov_low < 0:
-            wpts_keep_az[wpts_keep_az >= 360 + fov_low] -= 360
-
-        # monkey business if high is over 360
-        if fov_high > 360:
-            wpts_keep_az[wpts_keep_az <= fov_high - 360] += 360
-        print(f'fov_low: {fov_low}, fov_high: {fov_high}, {wpts_keep_az >= fov_low}, {wpts_keep_az <= fov_high}')
-        keep_indices = np.argwhere(np.logical_and((wpts_keep_az >= fov_low), (wpts_keep_az <= fov_high)))
-        # TODO: talk to Jeff about smol slice
-        print(f'length of keep_indices: {len(keep_indices)}')
-
-        wpts_keep_az = wpts_keep_az[keep_indices]
-        wptsKeep = wptsKeep[keep_indices]
-        projected_points = projectedPoints[keep_indices]
-        colorsKeep = colorsKeep[keep_indices]
-        print(f'shape of projected_points: {projected_points.shape}')
-        test_plot(i, projected_points, colorsKeep)
-
-        colorsKeep = colorsKeep[:, 0, :]
+        # colorsKeep = colorsKeep[:, 0, :]
 
         # print(wpts_keep_az[0:20])
-        projected_points = projected_points[:, 0, :]
-        x_list = projected_points[:, 0]
-        y_list = projected_points[:, 1]
+        # projected_pts = projected_pts[:, 0, :]
+        x_list = projected_pts[:, 0]
+        y_list = projected_pts[:, 1]
         # fig = plt.figure()
         # ax = fig.add_subplot()
 
