@@ -59,7 +59,7 @@ elif model == SIMPLE:
                             [0, 1.0, 0],  # y axis, green
                             [0, 0, 1.0]])  # z axis, blue
 
-    world_colors = np.array([[0, 0, 0],  # black
+    world_colors = np.array([[128, 0, 128 ],  # black
                             [255, 0, 0],  # red
                             [0, 255, 0],  # green
                             [0, 0, 255]])  # blue
@@ -73,7 +73,7 @@ elif model == SIMPLE:
     y_points = [i[1] for i in world_points]
     z_points = [i[2] for i in world_points]
 
-    t_vec = np.array([[0, 0, 0]]).astype(np.float)
+    t_vec = np.array([[0, 0, 10]]).astype(np.float)
 
 # field of view
 fov = np.degrees(np.arctan2(image_j/2, focal_length))
@@ -235,7 +235,7 @@ def main():
         # projected_pts = projected_pts[keep_indices]
         # colorsKeep = colorsKeep[keep_indices]
         # print(f'shape of projected_points: {projected_pts.shape}')
-        test_plot(i, projected_pts, colorsKeep)
+        # test_plot(i, projected_pts, colorsKeep)
 
         # colorsKeep = colorsKeep[:, 0, :]
 
@@ -264,13 +264,12 @@ def main():
             d = np.linalg.norm(camPos[0] - wptsKeep[n, :])
 
             # If the current depth is greater than the depth map for i,j,
-            # continue with next point.
+            # continue to next point.
 
             if d > img_depth[ii, jj]:
                 continue
 
             # If we get here we have a good point.
-            ii = image_i - ii
             # Update depth map.
             img_depth[ii, jj] = d
 
