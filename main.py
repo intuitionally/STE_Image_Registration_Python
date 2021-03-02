@@ -10,11 +10,12 @@ import tifffile as tiff
 
 GINGERBREAD = 1
 SIMPLE = 2
-model = GINGERBREAD
+SIMPLE2 = 3
+model = SIMPLE2
 
-write_depth = True
-write_xyz= True
-write_az = True
+write_depth = False
+write_xyz = True
+write_az = False
 
 
 if model == GINGERBREAD:
@@ -59,7 +60,7 @@ elif model == SIMPLE:
                             [0, 1.0, 0],  # y axis, green
                             [0, 0, 1.0]])  # z axis, blue
 
-    world_colors = np.array([[128, 0, 128 ],  # black
+    world_colors = np.array([[128, 0, 128],  # purple
                             [255, 0, 0],  # red
                             [0, 255, 0],  # green
                             [0, 0, 255]])  # blue
@@ -133,7 +134,9 @@ intrinsics = np.array([[focal_length, 0, image_j/2],
                       [0, 0, 1.0]]).astype(np.float)
 
 # getting rotation matrix
-rx = -90
+rx = 0
+# An initial rotation matrix somehow changes which axis gets rotated around!!!
+# world axes don't change when model is rotated? is this expected?
 ry = 0
 rz = 0
 
@@ -153,7 +156,8 @@ def test_plot(num, pts, colors):
 
     plt.figure(num)
     ax = plt.axes()
-    ax.scatter(x_list, y_list, c=colors/255, s=0.01)
+    ax.set_facecolor
+    ax.scatter(x_list, y_list, c=colors/255)
     # plt.show()
 
 
@@ -200,18 +204,20 @@ def main():
 
         R = np.matmul(np.matmul(Rz, Ry), Rx)
 
-        # sample rotation matrix = I
-        # R = np.identity(3)
-
         # Get camera position to use in the code below to calculate depth.
-        camPos = np.linalg.pinv(np.matmul(R, np.negative(np.linalg.pinv(t_vec))))
+        # camPos = np.linalg.pinv(np.matmul(R, np.negative(np.linalg.pinv(t_vec))))
+        camPos = np.linalg.pinv(np.matmul(R, np.linalg.pinv(np.negative(t_vec))))
+        print(f'camera position: {camPos}')
+        # camPos = np.matmul(np.negative(np.transpose(R)), np.transpose(t_vec))
 
         # get rotation vector
-        r_vec = cv2.Rodrigues(R)[0].astype(np.float)
+        r_vec, _ = cv2.Rodrigues(R)
 
         # This is the money function.  Project world points to image points.
-        projected_pts, jacobian = cv2.projectPoints(world_points, r_vec, t_vec, intrinsics, distCoeffs=0)
+        projected_pts = cv2.projectPoints(world_points, r_vec, t_vec, intrinsics, distCoeffs=0)[0]
         projected_pts = projected_pts[0:, 0, 0:]
+        print(f'projected: {projected_pts}')
+        # test_plot(i, projected_pts, world_colors)
 
         # Find good points inside the window.  These will be points with:
         # 1 <= i <= image_i *and* 1 <= j <= image_j.
@@ -258,7 +264,7 @@ def main():
         #     wpts_keep_az[wpts_keep_az <= fov_high - 360] += 360
         # print(f'fov_low: {fov_low}, fov_high: {fov_high}, {wpts_keep_az >= fov_low}, {wpts_keep_az <= fov_high}')
         # keep_indices = np.argwhere(np.logical_and((wpts_keep_az >= fov_low), (wpts_keep_az <= fov_high)))
-        # # TODO: talk to Jeff about smol slice
+
         # print(f'length of keep_indices: {len(keep_indices)}')
         #
         # wpts_keep_az = wpts_keep_az[keep_indices]
@@ -268,7 +274,10 @@ def main():
         # print(f'shape of projected_points: {projected_pts.shape}')
 
 
-        # plt.show()
+        # wptsKeep = world_points
+        # colorsKeep = world_colors
+
+        test_plot(i, projected_pts, colorsKeep)
 
         for n in range(0, (np.size(projected_pts, 0))):
             # Get current pixel i,j
@@ -286,7 +295,7 @@ def main():
             if d > img_depth[ii, jj]:
                 print(f'greater i: {ii}, j: {jj}, depth: {d}')
                 continue
-
+            print(f'i: {ii}, j: {jj}, depth: {d}')
             # If we get here we have a good point.
             # Update depth map.
             img_depth[ii, jj] = d
@@ -302,9 +311,12 @@ def main():
 
         # tifffile.imsave
 
-        # Write out images.
-        # imwrite(img,fnameImg);
+        img = np.flip(img, 0)
+        imgXYZ = np.flip(imgXYZ, 0)
+        img_depth = np.flip(img_depth, 0)
+        img_az = np.flip(img_az, 0)
 
+        # Write out images.
         tiff.imwrite(fname_img, img)
         if write_xyz:
             tiff.imwrite(fname_xyz_img, imgXYZ, dtype=np.float64)
