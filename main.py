@@ -75,6 +75,37 @@ elif model == SIMPLE:
 
     t_vec = np.array([[0, 0, 10]]).astype(np.float)
 
+elif model == SIMPLE2:
+    fname_stub = 'output/simple2'
+
+    world_points = np.array([[1.0, 1, 1],
+                             [1, -1, 1],
+                             [-1, -1, 1],
+                             [-1, 1, 1],
+                             [1, 1, -1],
+                             [1, -1, -1],
+                             [-1, -1, -1],
+                             [-1, 1, -1]])
+
+    world_colors = np.array([[128, 0, 128],  # purple
+                      [255, 0, 0],     # bright red
+                      [0, 255, 0],     # light green
+                      [0, 0, 255],     # light blue
+                      [127, 127, 127],  # gray
+                      [127, 0, 0],     # maroon
+                      [0, 127, 0],     # dark green
+                      [0, 0, 127]])    # dark blue
+
+    focal_length = 10
+    image_i = 50
+    image_j = 50
+
+    x_points = [i[0] for i in world_points]
+    y_points = [i[1] for i in world_points]
+    z_points = [i[2] for i in world_points]
+
+    t_vec = np.array([[0, 0, 0.5]]).astype(np.float)
+
 # field of view
 fov = np.degrees(np.arctan2(image_j/2, focal_length))
 print(f'fov: {fov}')
@@ -86,7 +117,7 @@ zMid = np.mean([np.min(z_points), np.max(z_points)])
 
 offsets = [xMid, yMid, zMid]
 
-# world_points -= offsets
+world_points -= offsets
 
 # intrinsics matrix
 # f_x skew=0 c_x
@@ -127,7 +158,7 @@ def test_plot(num, pts, colors):
 
 
 def main():
-    for i in range(0, 91, 30):
+    for i in range(0, 90, 90):
         # base filename
         fname_base = f'{fname_stub}_{i}'
         fname_img = Path(f'{fname_base}.tif')
@@ -235,25 +266,11 @@ def main():
         # projected_pts = projected_pts[keep_indices]
         # colorsKeep = colorsKeep[keep_indices]
         # print(f'shape of projected_points: {projected_pts.shape}')
-        # test_plot(i, projected_pts, colorsKeep)
 
-        # colorsKeep = colorsKeep[:, 0, :]
-
-        # print(wpts_keep_az[0:20])
-        # projected_pts = projected_pts[:, 0, :]
-        x_list = projected_pts[:, 0]
-        y_list = projected_pts[:, 1]
-        # fig = plt.figure()
-        # ax = fig.add_subplot()
-
-        # ax = plt.axes()
-
-        # ax.scatter(x_list, y_list, c=colorsKeep/255, s=0.01)
-        # ax.scatter(projected_pts[:, 0], projected_pts[:, 1], c=world_colors / 255, s=0.01)
 
         # plt.show()
 
-        for n in range(0, np.size(projected_pts, 0)):
+        for n in range(0, (np.size(projected_pts, 0))):
             # Get current pixel i,j
             ii = round(projected_pts[n, 1])
 
@@ -267,6 +284,7 @@ def main():
             # continue to next point.
 
             if d > img_depth[ii, jj]:
+                print(f'greater i: {ii}, j: {jj}, depth: {d}')
                 continue
 
             # If we get here we have a good point.
