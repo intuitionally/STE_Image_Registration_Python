@@ -11,9 +11,9 @@ import tifffile as tiff
 GINGERBREAD = 1
 SIMPLE = 2
 SIMPLE2 = 3
-model = SIMPLE2
+model = GINGERBREAD
 
-write_depth = False
+write_depth = True
 write_xyz = True
 write_az = False
 
@@ -47,7 +47,7 @@ if model == GINGERBREAD:
     y_points = point_cloud[:, 1]
     z_points = point_cloud[:, 2]
 
-    t_vec = np.array([[0, 0, 10.0]]).astype(np.float)
+    t_vec = np.array([[0, 0, 10]]).astype(np.float)
 
 elif model == SIMPLE:
     fname_stub = 'output/simple'
@@ -79,14 +79,14 @@ elif model == SIMPLE:
 elif model == SIMPLE2:
     fname_stub = 'output/simple2'
 
-    world_points = np.array([[1.0, 1, 1],
-                             [1, -1, 1],
-                             [-1, -1, 1],
-                             [-1, 1, 1],
-                             [1, 1, -1],
-                             [1, -1, -1],
-                             [-1, -1, -1],
-                             [-1, 1, -1]])
+    world_points = np.array([[1.0, 1, 1],  # purple
+                             [1, -1, 1],   # bright red
+                             [-1, -1, 1],  # light green
+                             [-1, 1, 1],   # light blue
+                             [1, 1, -1],   # gray
+                             [1, -1, -1],  # maroon
+                             [-1, -1, -1], # dark green
+                             [-1, 1, -1]]) # dark blue
 
     world_colors = np.array([[128, 0, 128],  # purple
                       [255, 0, 0],     # bright red
@@ -119,6 +119,7 @@ zMid = np.mean([np.min(z_points), np.max(z_points)])
 offsets = [xMid, yMid, zMid]
 
 world_points -= offsets
+
 
 # intrinsics matrix
 # f_x skew=0 c_x
@@ -185,7 +186,7 @@ def main():
 
         img = np.zeros(shape=(image_i, image_j, 3), dtype=np.uint8)
         imgXYZ = np.empty(shape=(image_i, image_j, 3))
-        img_depth = np.array(np.ones((image_i, image_j))*np.inf)
+        img_depth = np.array(np.ones((image_i, image_j))*500)
         img_az = np.empty(shape=(image_i, image_j))
 
         ry = i
@@ -222,62 +223,71 @@ def main():
         # Find good points inside the window.  These will be points with:
         # 1 <= i <= image_i *and* 1 <= j <= image_j.
         # Find indices greater than 1 for i,j
-        keep1 = np.where(np.min(projected_pts, axis=1) >= 1.0)
-
-        # Find indices with i <= image_i
-        keep2 = np.where(projected_pts[0:, 1] <= image_i)
-
-        # Find indices with j <= image_j
-        keep3 = np.where(projected_pts[0:, 0] <= image_j)
-
-        # find the intersection of the keep indices
-        keep = np.intersect1d(keep1, np.intersect1d(keep2, keep3))
-
-        # Get keeper XYZ
-        wptsKeep = world_points[keep]
-
-        # Get keeper projected i,j points
-        projected_pts = projected_pts[keep]
-
-        # Get keeper colors
-        colorsKeep = world_colors[keep]
+        # keep1 = np.where(np.min(projected_pts, axis=1) >= 1.0)
+        #
+        # # Find indices with i <= image_i
+        # keep2 = np.where(projected_pts[0:, 1] <= image_i)
+        #
+        # # Find indices with j <= image_j
+        # keep3 = np.where(projected_pts[0:, 0] <= image_j)
+        #
+        # # find the intersection of the keep indices
+        # keep = np.intersect1d(keep1, np.intersect1d(keep2, keep3))
+        #
+        # # Get keeper XYZ
+        # wptsKeep = world_points[keep]
+        #
+        # # Get keeper projected i,j points
+        # projected_pts = projected_pts[keep]
+        # # print(f'post keeps {len(projected_pts)}')
+        #
+        # # Get keeper colors
+        # colorsKeep = world_colors[keep]
 
         # test_plot(i, projected_pts, colorsKeep)
 
         # POLAR STUFFFFF
-        # wpts_keep_az = convert_polar(wptsKeep) - 90  # just getting theta
+        wpts_keep_az = convert_polar(wptsKeep, camPos) - 90  # just getting theta
         # print(f'length of wpts_keep_az: {len(wpts_keep_az)}')
-        #
-        # # convert negative to positive
-        # wpts_keep_az[wpts_keep_az < 0] += 360
-        #
-        # # fov extents
-        # fov_low = i - fov
-        # fov_high = i + fov
-        #
-        # # monkey business if low is negative
-        # if fov_low < 0:
-        #     wpts_keep_az[wpts_keep_az >= 360 + fov_low] -= 360
-        #
-        # # monkey business if high is over 360
-        # if fov_high > 360:
-        #     wpts_keep_az[wpts_keep_az <= fov_high - 360] += 360
+        # print(f'wpts_keep_az: {wpts_keep_az}')
+
+        # convert negative to positive
+        wpts_keep_az[wpts_keep_az < 0] += 360
+
+        # fov extents
+        fov_low = i - fov
+
+        fov_high = i + fov
+
+        # monkey business if low is negative
+        if fov_low < 0:
+            wpts_keep_az[wpts_keep_az >= (360 + fov_low)] -= 360
+
+        # monkey business if high is over 360
+        if fov_high > 360:
+            wpts_keep_az[wpts_keep_az <= (fov_high - 360)] += 360
         # print(f'fov_low: {fov_low}, fov_high: {fov_high}, {wpts_keep_az >= fov_low}, {wpts_keep_az <= fov_high}')
-        # keep_indices = np.argwhere(np.logical_and((wpts_keep_az >= fov_low), (wpts_keep_az <= fov_high)))
 
-        # print(f'length of keep_indices: {len(keep_indices)}')
-        #
-        # wpts_keep_az = wpts_keep_az[keep_indices]
-        # wptsKeep = wptsKeep[keep_indices]
-        # projected_pts = projected_pts[keep_indices]
-        # colorsKeep = colorsKeep[keep_indices]
-        # print(f'shape of projected_points: {projected_pts.shape}')
+        keep_indices = np.argwhere(np.logical_and((wpts_keep_az >= fov_low), (wpts_keep_az <= fov_high)))
+        # keep_indices = np.argwhere(wpts_keep_az >= fov_low)
+        # keep_indices = np.argwhere(wpts_keep_az <= fov_high)
 
+        wpts_keep_az = wpts_keep_az[keep_indices]
+
+        # plt.hist(wpts_keep_az, 90)
+        # plt.title(f'Angle={i}, fovlow={fov_low}, fovhigh={fov_high}')
+        # plt.show()
+
+        wptsKeep = wptsKeep[keep_indices]
+        projected_pts = projected_pts[keep_indices]
+        colorsKeep = colorsKeep[keep_indices]
 
         # wptsKeep = world_points
         # colorsKeep = world_colors
-
-        test_plot(i, projected_pts, colorsKeep)
+        projected_pts = projected_pts[:, 0, :]
+        # print(f'size of projected_pts {len(projected_pts)}')
+        colorsKeep = colorsKeep[:, 0, :]
+        # test_plot(i, projected_pts, colorsKeep)
 
         for n in range(0, (np.size(projected_pts, 0))):
             # Get current pixel i,j
@@ -293,9 +303,9 @@ def main():
             # continue to next point.
 
             if d > img_depth[ii, jj]:
-                print(f'greater i: {ii}, j: {jj}, depth: {d}')
+                # print(f'greater i: {ii}, j: {jj}, depth: {d}')
                 continue
-            print(f'i: {ii}, j: {jj}, depth: {d}')
+            # print(f'i: {ii}, j: {jj}, depth: {d}')
             # If we get here we have a good point.
             # Update depth map.
             img_depth[ii, jj] = d
@@ -326,7 +336,7 @@ def main():
             tiff.imwrite(fname_az_img, img_az, dtype=np.float64)
 
 
-    plt.show()
+    # plt.show()
 
 
 if __name__ == '__main__':
