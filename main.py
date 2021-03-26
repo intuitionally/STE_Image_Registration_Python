@@ -1,12 +1,12 @@
 import cv2
-from PIL import Image
-from math import cos, dist, sin, radians
+from math import cos, sin, radians
 import matplotlib.pyplot as plt
-from mpl_toolkits import mplot3d
 import numpy as np
 import open3d as o3d
 from pathlib import Path
 import tifffile as tiff
+
+# TODO multiprocess
 
 GINGERBREAD = 1
 APARTMENTS = 2
@@ -36,7 +36,7 @@ if model == GINGERBREAD:
     world_colors = point_cloud[:, 3:6].astype(np.float64)
 
     # setting known values
-    focal_length = 400.0
+    focal_length = 500
     image_i = 600
     image_j = 400
 
@@ -117,11 +117,6 @@ elif model == SIMPLE:
                             [0, 255, 0],  # green
                             [0, 0, 255]])  # blue
 
-    # pcd = o3d.geometry.PointCloud()
-    # pcd.points = o3d.utility.Vector3dVector(world_points)
-    # pcd.colors = o3d.utility.Vector3dVector(world_colors)
-    # o3d.visualization.draw_geometries([pcd])
-
     x_points = [i[0] for i in world_points]
     y_points = [i[1] for i in world_points]
     z_points = [i[2] for i in world_points]
@@ -159,63 +154,109 @@ elif model == SIMPLE2:
 
     t_vec = np.array([[0, 0, 0.5]]).astype(np.float)
 
-# field of view
-fov = np.degrees(np.arctan2(image_j/2, focal_length))
-print(f'fov: {fov}')
 
-# getting the midpoints from each array
-xMid = np.mean([np.min(x_points), np.max(x_points)])
-yMid = np.mean([np.min(y_points), np.max(y_points)])
-zMid = np.mean([np.min(z_points), np.max(z_points)])
+# name: convert_polar
+# inputs: xyz - an array of xy points (nx32)
+#         camPos - current camera position
+# description: returns a list of thetas corresponding to the
+# spherical polar coordinates for each xyz point
+def convert_polar(xy, camPos):
+    x = xy[:, 0] + camPos[0]
+    y = xy[:, 1] + camPos[1]
 
-offsets = [xMid, yMid, zMid]
-
-world_points -= offsets
-
-
-# intrinsics matrix
-# f_x skew=0 c_x
-# 0   f_y  c_y
-# 0   0    1
-
-# f_x = f_y for this model
-# assume no skew?
-# c_x and c_y make up the principal point, set to 0
-
-intrinsics = np.array([[focal_length, 0, image_j/2],
-                      [0, focal_length, image_i/2],
-                      [0, 0, 1.0]]).astype(np.float)
-
-# getting rotation matrix
-rx = 0
-# An initial rotation matrix somehow changes which axis gets rotated around!!!
-# world axes don't change when model is rotated? is this expected?
-ry = 0
-rz = 0
-
-
-# make sure array shape is nx3
-def convert_polar(xyz):
-    x = xyz[:, 0]
-    y = xyz[:, 1]
     return np.degrees(np.arctan2(y, x))  # theta probably
 
 
+# name: test_plot
+# inputs: num - figure number
+#         pts - points to plot
+#         colors - colors corresponding to points in pts
+# description: test function to plot
 def test_plot(num, pts, colors):
-    # pts = pts[:, 0, :]
-    x_list = pts[:, 0]
-    y_list = pts[:, 1]
-    # colors = colors[:, 0, :]
+    x_list = pts[:, 1]
+    y_list = pts[:, 0]
 
     plt.figure(num)
     ax = plt.axes()
-    ax.set_facecolor
-    ax.scatter(x_list, y_list, c=colors/255)
-    # plt.show()
+    ax.scatter(x_list, y_list, c=colors/255, s=0.01)
 
 
-def main():
-    for i in range(0, 90, 90):
+# name: keep_in_frame
+# inputs: projected_pts - set of points projected to an image frame
+# description: removes points outside of the viewing window
+def keep_in_frame(projected_pts):
+    # Find good points inside the window.  These will be points with:
+    # 1 <= i <= image_i *and* 1 <= j <= image_j.
+    # Find indices greater than 1 for i,j
+    keep1 = np.where(np.min(projected_pts, axis=1) >= 1.0)
+
+    # Find indices with i <= image_i
+    keep2 = np.where(projected_pts[0:, 1] <= image_i)
+
+    # Find indices with j <= image_j
+    keep3 = np.where(projected_pts[0:, 0] <= image_j)
+
+    # find the intersection of the keep indices
+    keep = np.intersect1d(keep1, np.intersect1d(keep2, keep3))
+    return keep
+
+
+# name: keep_in_az
+# inputs: wptsKeep - already reduced set of projected points
+#         camPos - camera position
+#         fov_low  - lower bound in degrees of fov
+#         fov_high - upper bound in degrees of fov
+# description: removes points outside of the camera's field of view
+def keep_in_az(wptsKeep, camPos, fov_low, fov_high):
+    wpts_keep_az = convert_polar(wptsKeep, camPos) - 90  # just getting theta
+
+    # convert negative to positive
+    wpts_keep_az[wpts_keep_az < 0] += 360
+
+    # monkey business if low is negative
+    if fov_low < 0:
+        wpts_keep_az[wpts_keep_az >= (360 + fov_low)] -= 360
+
+    # monkey business if high is over 360
+    if fov_high > 360:
+        wpts_keep_az[wpts_keep_az <= (fov_high - 360)] += 360
+
+    keep_indices = np.argwhere(np.logical_and((wpts_keep_az >= fov_low), (wpts_keep_az <= fov_high)))
+    return keep_indices, wpts_keep_az
+
+
+# name: main
+# inputs: wpts - point cloud model
+# description: projects 3d point cloud to 2d at different angles
+def main(wpts):
+
+    world_points = wpts
+
+    # field of view
+    fov = np.degrees(np.arctan2(image_j / 2, focal_length))
+
+    # getting the midpoints from each array so that the model can be centered at the origin
+    xMid = np.mean([np.min(x_points), np.max(x_points)])
+    yMid = np.mean([np.min(y_points), np.max(y_points)])
+    zMid = np.mean([np.min(z_points), np.max(z_points)])
+
+    offsets = [xMid, yMid, zMid]
+
+    # center the model
+    world_points -= offsets
+
+    # assuming f_x = f_y and that there is no skew
+    intrinsics = np.array([[focal_length, 0, image_j / 2],
+                           [0, focal_length, image_i / 2],
+                           [0, 0, 1.0]]).astype(np.float)
+
+    # setting initial rotation values so we can rotate around the sides of the model
+    rx = 90
+    ry = 0
+    rz = 0
+
+    # loop through angles that are desired
+    for i in range(0, 1, 30):
         # base filename
         fname_base = f'{fname_stub}_{i}'
         fname_img = Path(f'{fname_base}.tif')
@@ -241,14 +282,14 @@ def main():
         img_depth = np.array(np.ones((image_i, image_j))*np.inf)
         img_az = np.empty(shape=(image_i, image_j))
 
-        ry = i
+        rz = i
 
-        Rx = np.array([[1, 0, 0],
+        Rx = np.array([[1.0, 0, 0],
                       [0, cos(radians(rx)), -sin(radians(rx))],
                       [0, sin(radians(rx)), cos(radians(rx))]])
 
         Ry = np.array([[cos(radians(ry)), 0, sin(radians(ry))],
-                       [0, 1, 0],
+                       [0, 1.0, 0],
                        [-sin(radians(ry)), 0, cos(radians(ry))]])
 
         Rz = np.array([[cos(radians(rz)), -sin(radians(rz)), 0],
@@ -257,15 +298,15 @@ def main():
 
         R = np.matmul(np.matmul(Rz, Ry), Rx)
 
+        # getting the transformation matrix so that the axes are rotated along with the model
+        R = np.transpose(R)
+
         # Get camera position to use in the code below to calculate depth.
-        # camPos = np.linalg.pinv(np.matmul(R, np.negative(np.linalg.pinv(t_vec))))
-        camPos = np.linalg.pinv(np.matmul(R, np.linalg.pinv(np.negative(t_vec))))
-        print(f'camera position: {camPos}')
-        # camPos = np.matmul(np.negative(np.transpose(R)), np.transpose(t_vec))
+        camPos = np.matmul(np.negative(np.transpose(R)), np.transpose(t_vec))
+        print(camPos)
 
         # get rotation vector
         r_vec, _ = cv2.Rodrigues(R)
-
         # This is the money function.  Project world points to image points.
         projected_pts = cv2.projectPoints(world_points, r_vec, t_vec, intrinsics, distCoeffs=0)[0]
 
@@ -293,26 +334,25 @@ def main():
 
         # reshape
         projected_pts = projected_pts[:, 0, :]
-        # print(f'size of projected_pts {len(projected_pts)}')
         colorsKeep = colorsKeep[:, 0, :]
-        # test_plot(i, projected_pts, colorsKeep)
 
+        # making sure campos is the same shape as a point so the elements don't get
+        # broadcasted weirdly in the depth calculation
+        camPos = np.transpose(camPos)
+
+        # Fill in data for TIFFs based on depth (we want the closest point if 2+ overlap)
         for n in range(0, (np.size(projected_pts, 0))):
             # Get current pixel i,j
             ii = round(projected_pts[n, 1]) - 1
             jj = round(projected_pts[n, 0]) - 1
 
             # Compute delta XYZ from the camera to the current point.
+            d = np.linalg.norm(wptsKeep[n, :] - camPos)
 
-            d = np.linalg.norm(camPos[0] - wptsKeep[n, :])
-
-            # If the current depth is greater than the depth map for i,j,
-            # continue to next point.
-
+            # if we already have a closer point in this pixel, skip the current one
             if d > img_depth[ii, jj]:
-                # print(f'greater i: {ii}, j: {jj}, depth: {d}')
                 continue
-            # print(f'i: {ii}, j: {jj}, depth: {d}')
+
             # If we get here we have a good point.
             # Update depth map.
             img_depth[ii, jj] = d
@@ -324,27 +364,28 @@ def main():
             imgXYZ[ii, jj, :] = wptsKeep[n, :] + offsets
 
             # Update azimuth image.
-            # img_az[ii,jj] = wptsKeepAz[n]
+            img_az[ii, jj] = wpts_keep_az[n]
 
-        # tifffile.imsave
-
+        # flipping everything correctly in the tiff file
         img = np.flip(img, 0)
         imgXYZ = np.flip(imgXYZ, 0)
         img_depth = np.flip(img_depth, 0)
         img_az = np.flip(img_az, 0)
 
+        img = np.flip(img, 1)
+        imgXYZ = np.flip(imgXYZ, 1)
+        img_depth = np.flip(img_depth, 1)
+        img_az = np.flip(img_az, 1)
+
         # Write out images.
         tiff.imwrite(fname_img, img)
         if write_xyz:
-            tiff.imwrite(fname_xyz_img, imgXYZ, dtype=np.float64)
+            tiff.imwrite(fname_xyz_img, imgXYZ)
         if write_depth:
-            tiff.imwrite(fname_depth_img, img_depth, dtype=np.float64)
+            tiff.imwrite(fname_depth_img, img_depth)
         if write_az:
-            tiff.imwrite(fname_az_img, img_az, dtype=np.float64)
-
-
-    # plt.show()
+            tiff.imwrite(fname_az_img, img_az)
 
 
 if __name__ == '__main__':
-    main()
+    main(world_points)
