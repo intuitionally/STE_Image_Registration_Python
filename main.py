@@ -9,18 +9,21 @@ from pathlib import Path
 import tifffile as tiff
 
 GINGERBREAD = 1
-SIMPLE = 2
-SIMPLE2 = 3
+APARTMENTS = 2
+RANCH = 3
+SIMPLE = 4
+SIMPLE2 = 5
+
+
 model = GINGERBREAD
 
-write_depth = True
+write_depth = False
 write_xyz = True
 write_az = False
 
 
 if model == GINGERBREAD:
     # reading point cloud into numpy array
-    # gb_file = "C:\\Users\\rdgrlcl9\\Documents\\STE_Python\\gb_house\\gbhouse.txt"
     gb_file = "C:\\Users\\rdgrldkb\\Documents\\gbhouse.txt"
     point_cloud = np.loadtxt(gb_file).astype(np.float)
 
@@ -32,11 +35,6 @@ if model == GINGERBREAD:
     # last three columns are point colors
     world_colors = point_cloud[:, 3:6].astype(np.float64)
 
-    # pcd = o3d.geometry.PointCloud()
-    # pcd.points = o3d.utility.Vector3dVector(world_points)
-    # pcd.colors = o3d.utility.Vector3dVector(world_colors/255)
-    # o3d.visualization.draw_geometries([pcd])
-
     # setting known values
     focal_length = 400.0
     image_i = 600
@@ -47,7 +45,61 @@ if model == GINGERBREAD:
     y_points = point_cloud[:, 1]
     z_points = point_cloud[:, 2]
 
+    # camera views the scene from this position
     t_vec = np.array([[0, 0, 10]]).astype(np.float)
+
+
+elif model == APARTMENTS:
+    # reading point cloud into numpy array
+    apartment_file = "C:\\Users\\rdgrldkb\\Documents\\Apartments_C10_Local.ply"
+    point_cloud = o3d.io.read_point_cloud(apartment_file)
+
+    fname_stub = 'output/apartments'
+
+    world_points = np.asarray(point_cloud.points)
+
+    # last three columns are point colors
+    world_colors = np.asarray(point_cloud.colors) * 255
+    print(f'colors {world_colors[0]}')
+
+    # setting known values
+    focal_length = 10000
+    image_i = 500
+    image_j = 500
+
+    # separating x, y, z values into their own respective arrays
+    x_points = world_points[:, 0]
+    y_points = world_points[:, 1]
+    z_points = world_points[:, 2]
+
+    # camera views the scene from this position
+    t_vec = np.array([[0, 0, 500]]).astype(np.float)
+
+elif model == RANCH:
+    # reading point cloud into numpy array
+    ranch_file = "C:\\Users\\rdgrldkb\\Documents\\OberRanchRTC360_barn.ply"
+    point_cloud = o3d.io.read_point_cloud(ranch_file)
+
+    fname_stub = 'output/ranch'
+
+    world_points = np.asarray(point_cloud.points)
+
+    # last three columns are point colors
+    world_colors = np.asarray(point_cloud.colors) * 255
+    print(f'colors {world_colors[0]}')
+
+    # setting known values
+    focal_length = 8000
+    image_i = 200
+    image_j = 400
+
+    # separating x, y, z values into their own respective arrays
+    x_points = world_points[:, 0]
+    y_points = world_points[:, 1]
+    z_points = world_points[:, 2]
+
+    # camera views the scene from this position
+    t_vec = np.array([[0, 2, 900]]).astype(np.float)
 
 elif model == SIMPLE:
     fname_stub = 'output/simple'
@@ -74,7 +126,7 @@ elif model == SIMPLE:
     y_points = [i[1] for i in world_points]
     z_points = [i[2] for i in world_points]
 
-    t_vec = np.array([[0, 0, 10]]).astype(np.float)
+    t_vec = np.array([[0, 10, 0]]).astype(np.float)
 
 elif model == SIMPLE2:
     fname_stub = 'output/simple2'
@@ -186,7 +238,7 @@ def main():
 
         img = np.zeros(shape=(image_i, image_j, 3), dtype=np.uint8)
         imgXYZ = np.empty(shape=(image_i, image_j, 3))
-        img_depth = np.array(np.ones((image_i, image_j))*500)
+        img_depth = np.array(np.ones((image_i, image_j))*np.inf)
         img_az = np.empty(shape=(image_i, image_j))
 
         ry = i
@@ -216,74 +268,30 @@ def main():
 
         # This is the money function.  Project world points to image points.
         projected_pts = cv2.projectPoints(world_points, r_vec, t_vec, intrinsics, distCoeffs=0)[0]
+
+        # reshape to nx2
         projected_pts = projected_pts[0:, 0, 0:]
-        print(f'projected: {projected_pts}')
-        # test_plot(i, projected_pts, world_colors)
 
-        # Find good points inside the window.  These will be points with:
-        # 1 <= i <= image_i *and* 1 <= j <= image_j.
-        # Find indices greater than 1 for i,j
-        # keep1 = np.where(np.min(projected_pts, axis=1) >= 1.0)
-        #
-        # # Find indices with i <= image_i
-        # keep2 = np.where(projected_pts[0:, 1] <= image_i)
-        #
-        # # Find indices with j <= image_j
-        # keep3 = np.where(projected_pts[0:, 0] <= image_j)
-        #
-        # # find the intersection of the keep indices
-        # keep = np.intersect1d(keep1, np.intersect1d(keep2, keep3))
-        #
-        # # Get keeper XYZ
-        # wptsKeep = world_points[keep]
-        #
-        # # Get keeper projected i,j points
-        # projected_pts = projected_pts[keep]
-        # # print(f'post keeps {len(projected_pts)}')
-        #
-        # # Get keeper colors
-        # colorsKeep = world_colors[keep]
+        # find which projected points are still in the frame
+        keep = keep_in_frame(projected_pts)
 
-        # test_plot(i, projected_pts, colorsKeep)
+        # Get keeper XYZ
+        wptsKeep = world_points[keep]
 
-        # POLAR STUFFFFF
-        wpts_keep_az = convert_polar(wptsKeep, camPos) - 90  # just getting theta
-        # print(f'length of wpts_keep_az: {len(wpts_keep_az)}')
-        # print(f'wpts_keep_az: {wpts_keep_az}')
+        # Get keeper projected i,j points
+        projected_pts = projected_pts[keep]
 
-        # convert negative to positive
-        wpts_keep_az[wpts_keep_az < 0] += 360
+        # Get keeper colors
+        colorsKeep = world_colors[keep]
 
-        # fov extents
-        fov_low = i - fov
-
-        fov_high = i + fov
-
-        # monkey business if low is negative
-        if fov_low < 0:
-            wpts_keep_az[wpts_keep_az >= (360 + fov_low)] -= 360
-
-        # monkey business if high is over 360
-        if fov_high > 360:
-            wpts_keep_az[wpts_keep_az <= (fov_high - 360)] += 360
-        # print(f'fov_low: {fov_low}, fov_high: {fov_high}, {wpts_keep_az >= fov_low}, {wpts_keep_az <= fov_high}')
-
-        keep_indices = np.argwhere(np.logical_and((wpts_keep_az >= fov_low), (wpts_keep_az <= fov_high)))
-        # keep_indices = np.argwhere(wpts_keep_az >= fov_low)
-        # keep_indices = np.argwhere(wpts_keep_az <= fov_high)
-
-        wpts_keep_az = wpts_keep_az[keep_indices]
-
-        # plt.hist(wpts_keep_az, 90)
-        # plt.title(f'Angle={i}, fovlow={fov_low}, fovhigh={fov_high}')
-        # plt.show()
+        # find which points are behind the camera to avoid false projections
+        keep_indices, wpts_keep_az = keep_in_az(wptsKeep, camPos, i-fov, i+fov)
 
         wptsKeep = wptsKeep[keep_indices]
         projected_pts = projected_pts[keep_indices]
         colorsKeep = colorsKeep[keep_indices]
 
-        # wptsKeep = world_points
-        # colorsKeep = world_colors
+        # reshape
         projected_pts = projected_pts[:, 0, :]
         # print(f'size of projected_pts {len(projected_pts)}')
         colorsKeep = colorsKeep[:, 0, :]
@@ -291,9 +299,8 @@ def main():
 
         for n in range(0, (np.size(projected_pts, 0))):
             # Get current pixel i,j
-            ii = round(projected_pts[n, 1])
-
-            jj = round(projected_pts[n, 0])
+            ii = round(projected_pts[n, 1]) - 1
+            jj = round(projected_pts[n, 0]) - 1
 
             # Compute delta XYZ from the camera to the current point.
 
