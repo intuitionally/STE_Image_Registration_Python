@@ -9,15 +9,16 @@ import tifffile as tiff
 # TODO multiprocess
 
 GINGERBREAD = 1
-APARTMENTS = 2
-RANCH = 3
-SIMPLE = 4
-SIMPLE2 = 5
+APARTMENTS_LOCAL = 2
+APARTMENTS_LYNX = 3
+RANCH = 4
+SIMPLE = 5
+SIMPLE2 = 6
 
 
-model = GINGERBREAD
+model = APARTMENTS_LYNX
 
-write_depth = False
+write_depth = True
 write_xyz = True
 write_az = False
 
@@ -49,12 +50,38 @@ if model == GINGERBREAD:
     t_vec = np.array([[0, 0, 10]]).astype(np.float)
 
 
-elif model == APARTMENTS:
+elif model == APARTMENTS_LOCAL:
     # reading point cloud into numpy array
     apartment_file = "C:\\Users\\rdgrldkb\\Documents\\Apartments_C10_Local.ply"
     point_cloud = o3d.io.read_point_cloud(apartment_file)
 
-    fname_stub = 'output/apartments'
+    fname_stub = 'output/apartments_local'
+
+    world_points = np.asarray(point_cloud.points)
+
+    # last three columns are point colors
+    world_colors = np.asarray(point_cloud.colors) * 255
+    print(f'colors {world_colors[0]}')
+
+    # setting known values
+    focal_length = 10000
+    image_i = 500
+    image_j = 500
+
+    # separating x, y, z values into their own respective arrays
+    x_points = world_points[:, 0]
+    y_points = world_points[:, 1]
+    z_points = world_points[:, 2]
+
+    # camera views the scene from this position
+    t_vec = np.array([[0, 0, 500]]).astype(np.float)
+
+elif model == APARTMENTS_LYNX:
+    # reading point cloud into numpy array
+    apartment_file = "C:\\Users\\rdgrldkb\\Documents\\Apartments_Lynx.ply"
+    point_cloud = o3d.io.read_point_cloud(apartment_file)
+
+    fname_stub = 'output/apartments_lynx'
 
     world_points = np.asarray(point_cloud.points)
 
@@ -256,7 +283,8 @@ def main(wpts):
     rz = 0
 
     # loop through angles that are desired
-    for i in range(0, 1, 30):
+    outer_start = time.time()
+    for i in range(330, 331, 30):
         # base filename
         fname_base = f'{fname_stub}_{i}'
         fname_img = Path(f'{fname_base}.tif')
@@ -297,9 +325,6 @@ def main(wpts):
                        [0, 0, 1.0]])
 
         R = np.matmul(np.matmul(Rz, Ry), Rx)
-
-        # getting the transformation matrix so that the axes are rotated along with the model
-        R = np.transpose(R)
 
         # Get camera position to use in the code below to calculate depth.
         camPos = np.matmul(np.negative(np.transpose(R)), np.transpose(t_vec))
