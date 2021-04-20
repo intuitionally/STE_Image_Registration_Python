@@ -46,7 +46,7 @@ b_skip = 1
 # settings.listASearchStr = 'F:\software_development\STE_image_registration\output\apt_*rgb.tif'
 # settings.listASearchStr = 'F:\software_development\STE_image_registration\output\zebchop_*rgb.tif'
 # settings.listASearchStr = 'F:\software_development\STE_image_registration\sample_data\apartments\images\5cm\zebchop_*rgb.tif'
-a_fname = "C:\\Users\\rdgrldkb\\PycharmProjects\\STE_Image_Registration_Python\\output\\apartments_local_0"
+a_fname = "C:\\Users\\rdgrldkb\\PycharmProjects\\STE_Image_Registration_Python\\output\\apartments_local_0.tif"
 # listA = dir_b_fullpath(settings.listASearchStr) TODO add back when we implement multiple image matching
 
 # 'B' frames of Lynx in this instance.
@@ -55,7 +55,7 @@ a_fname = "C:\\Users\\rdgrldkb\\PycharmProjects\\STE_Image_Registration_Python\\
 # settings.listBSearchStr = 'F:\software_development\STE_image_registration\output\lynx_*rgb.tif'
 # settings.listBSearchStr = 'F:\software_development\STE_image_registration\output\hangp50*rgb.tif'
 
-b_fname = "C:\\Users\\rdgrldkb\\PycharmProjects\\STE_Image_Registration_Python\\output\\apartments_lynx_0"
+b_fname = "C:\\Users\\rdgrldkb\\PycharmProjects\\STE_Image_Registration_Python\\output\\apartments_lynx_0.tif"
 
 # Directory to which we write results
 # settings.strOutDir = "f:\temp"
@@ -70,13 +70,17 @@ matchDescList = ''
 for i in range(0, 1, a_skip):
     # Read frame A and parse filename for description.
     # a_fname = string(listA{i})   # TODO add back when we implement multiple image matching
-    img_a_grey = cv2.imread(a_fname, cv2.IMREAD_GRAYSCALE)
-    str_a = a_fname.split('/')[-1].split('.')[0]
 
-    # Convert to gray scale and stretch.I also switch to auto-gcp naming
+    #Convert to gray scale
+    img_a = cv2.imread(a_fname)
+    img_a_gray = cv2.cvtColor(img_a, cv2.COLOR_BGR2GRAY)
+    str_a = a_fname.split('\\')[-1].split('.')[0]
+
+    # Stretch the image. I also switch to auto-gcp naming
     # as I copied this code from there and didn't feel like changing all
     # the names.So from here on usgs is A frame.
-    usgs = imadjust(imAG, stretchlim(imAG, [0.0 1]))
+    usgs = img_a_gray
+    #usgs = imAdjust(img_a_grey, stretchLim(img_a_grey, [0.0, 1])) #redundant?????
 
     # Initialize empty placeholders for best matches.
     bestInlierFMV =[]
@@ -114,18 +118,18 @@ for i in range(0, 1, a_skip):
             strDesc = sprintf("#s-#s", strA, strB)
             disp(sprintf("Registering #s", strDesc))
 
-            # Convert to gray scale and stretch. See comment above...
-            # fmv is just B frame
-            imBG = rgb2gray(imB)
-            fmv = imadjust(imBG, stretchlim(imBG, [0.0 1]))
+        # Convert to gray scale and stretch. See comment above...
+        # fmv is just B frame
+        fmv = img_b_gray  # put imadjust back eventually
+        # fmv = imadjust(imBG, stretchlim(imBG, [0.0, 1])) # redundant?????
 
-            # Detect KAZE features for image A. Other feature detectors are
-            # available in Matlab(SURF, ORB, etc.) I've found KAZE works best
-            # for this type of work, but we probably should test others.
-            ptsUSGS = detectKAZEFeatures(usgs)
+        # Detect KAZE features for image A. Other feature detectors are
+        # available in Matlab(SURF, ORB, etc.) I've found KAZE works best
+        # for this type of work, but we probably should test others.     Should we test others???
+        detector = cv2.AKAZE.create()
 
-            # Extract image A features
-            [featuresUSGS, validPtsUSGS] = extractFeatures(usgs, ptsUSGS)
+        # detect and extract image A features
+        (featuresUSGS, validPtsUSGS) = detector.detectAndCompute(img_a_gray, None)
 
             # Detect KAZE features for image B
             ptsFMV = detectKAZEFeatures(fmv)
@@ -156,12 +160,14 @@ for i in range(0, 1, a_skip):
         disp(sprintf('  Matches:  #d', length(matchedFMV)))
 
         # Use estimateGeometricTransform to find the best matches from a lot of bad matches
-        [tform, inlierFMV, inlierUSGS, status] = estimateGeometricTransform(
-        matchedFMV, matchedUSGS,
-        settings.transformType,
-        'MaxNumTrials', settings.MaxNumTrials,
-        'Confidence', settings.Confidence,
-        'MaxDistance', settings.MaxDistance)
+        tform, mask = cv2.findHomography(matchedFMV, matchedUSGS, cv2.RANSAC, 5)
+        inliers = mask.ravel.tolist
+        # [tform, inlierFMV, inlierUSGS, status] = estimateGeometricTransform(
+        # matchedFMV, matchedUSGS,
+        # settings.transformType,
+        # 'MaxNumTrials', settings.MaxNumTrials,
+        # 'Confidence', settings.Confidence,
+        # 'MaxDistance', settings.MaxDistance)
 
         # Start assembling results for summary
         inlierCount = length(inlierFMV)
@@ -169,7 +175,7 @@ for i in range(0, 1, a_skip):
         matchDescList[end + 1] = strDesc
 
         # Display user message
-        disp(sprintf('  Inliers:  #d', inlierCount))
+        print(f'Inliers:  {inlierCount}')
 
         # If there are more inliers in the registration, make it the new "best" registration.
         if inlierCount > length(bestInlierFMV):
@@ -193,8 +199,10 @@ for i in range(0, 1, a_skip):
 
         if length(inlierFMV) < settings.minInliers:
             continue
-        fname_matches = fullfile(settings.strOutDir, sprintf("match_#s.txt", strDesc))
-        writeMatchFile(fname_matches, inlierUSGS.Location, inlierFMV.Location)
+
+        fname_matches = f'{output_dir}_match_{strDesc}s.jpg'
+        writeMatchFile(fname_matches, inliers.Location, inliers.Location)
+        # writeMatchFile(fname_matches, inlierUSGS.Location, inlierFMV.Location)
 
 
     # Make sure we have sufficient inliers to write "best_match" file
