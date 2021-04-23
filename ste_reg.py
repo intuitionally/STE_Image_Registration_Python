@@ -46,7 +46,7 @@ b_skip = 1
 # settings.listASearchStr = 'F:\software_development\STE_image_registration\output\apt_*rgb.tif'
 # settings.listASearchStr = 'F:\software_development\STE_image_registration\output\zebchop_*rgb.tif'
 # settings.listASearchStr = 'F:\software_development\STE_image_registration\sample_data\apartments\images\5cm\zebchop_*rgb.tif'
-a_fname = "C:\\Users\\rdgrldkb\\PycharmProjects\\STE_Image_Registration_Python\\output\\apartments_local_0.tif"
+a_fname = "C:\\Users\\rdgrldkb\\PycharmProjects\\STE_Image_Registration_Python\\output\\apartments_lynx_15.tif"
 # listA = dir_b_fullpath(settings.listASearchStr) TODO add back when we implement multiple image matching
 
 # 'B' frames of Lynx in this instance.
@@ -129,39 +129,54 @@ for i in range(0, 1, a_skip):
         detector = cv2.AKAZE.create()
 
         # detect and extract image A features
-        (featuresUSGS, validPtsUSGS) = detector.detectAndCompute(img_a_gray, None)
+        (keyPtsUSGS, descUSGS) = detector.detectAndCompute(img_a_gray, None)
 
-            # Detect KAZE features for image B
-            ptsFMV = detectKAZEFeatures(fmv)
+        # detect and extract features for image B
+        (keyPtsFMV, descFMV) = detector.detectAndCompute(img_b_gray, None)
 
-            # Extract features for image B
-            [featuresFMV, validPtsFMV] = extractFeatures(fmv, ptsFMV)
+        # brute force matcher
+        bf = cv2.BFMatcher(cv2.NORM_HAMMING)
+        # Match features between images. There will be a lot of matched features, most of them bad
+        matchPairs = bf.knnMatch(descUSGS, descFMV, k=2)
+        # indexPairs = (featuresUSGS, featuresFMV, queryDescriptors = keyPtsUSGS, trainingDescriptors = keyPtsFMV)  # Threshold?????
 
-            # Match features between images. THere will be a lot of matched features, most of them bad
-            indexPairs = matchFeatures(featuresUSGS, featuresFMV,
-            'Unique', false,
-            'MatchThreshold', settings.MatchThreshold,
-            'MaxRatio', settings.MaxRatio)
+        good = []
+        for m, n in matchPairs:
+            if m.distance < 0.9*n.distance:
+                good.append([m])
 
-            # Get points for matched features.
-            matchedUSGS = validPtsUSGS(indexPairs[:, 1])
-            matchedFMV = validPtsFMV(indexPairs[:, 2])
+        # Get points for matched features.
+        # print(descUSGS)
+        # print(keyPtsUSGS[0])
+        # print(matchPairs)
+        # matchedUSGS = keyPtsUSGS(indexPairs[:, 0])  # ask jeff what these are
+        # matchedFMV = keyPtsFMV(indexPairs[:, 1])
 
-            # Display matched features.It'll look like a bowl of spaghetti.
+        # Display matched features.It'll look like a bowl of spaghetti.
 
-            if settings.showPlot:
-                if ~exist('figMatches', 'var') | ~ishandle(figMatches):
-                    figMatches = figure
-                figure(figMatches)
-                showMatchedFeatures(usgs, fmv, matchedUSGS, matchedFMV, 'montage')
-                title(sprintf("#s", strDesc), 'Interpreter', 'none')
+        if show_plot:
+            im3 = cv2.drawMatchesKnn(img_a, keyPtsUSGS, img_b, keyPtsFMV, good, None, flags=2)
+            cv2.imshow('AKAZE matching', im3)
+            cv2.waitKey()
 
         # Display user message
-        disp(sprintf('  Matches:  #d', length(matchedFMV)))
+        print(f'Matches:  {len(matchPairs)}')
 
+        src_pts = np.float32([keyPtsUSGS[m[0].queryIdx].pt for m in good])  # .reshape(-1, 1, 2)
+        print(f'length of fmv: {len(keyPtsFMV)} length of good: {len(good)}')
+
+        dst_pts = np.float32([keyPtsFMV[m[0].trainIdx].pt for m in good])  # .reshape(-1, 1, 2)
         # Use estimateGeometricTransform to find the best matches from a lot of bad matches
-        tform, mask = cv2.findHomography(matchedFMV, matchedUSGS, cv2.RANSAC, 5)
-        inliers = mask.ravel.tolist
+        tform, mask = cv2.findHomography(src_pts, dst_pts, cv2.RANSAC, 5)
+        inliers = np.nonzero(mask.ravel().tolist())
+        # print(mask)
+        print(inliers)
+
+        if show_plot:
+            im3 = cv2.drawMatchesKnn(img_a, keyPtsUSGS, img_b, keyPtsFMV, good, None, matchesMask=mask, flags=2)
+            cv2.imshow('inlier stoof', im3)
+            cv2.waitKey()
+
         # [tform, inlierFMV, inlierUSGS, status] = estimateGeometricTransform(
         # matchedFMV, matchedUSGS,
         # settings.transformType,

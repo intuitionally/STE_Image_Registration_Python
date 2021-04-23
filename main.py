@@ -284,7 +284,7 @@ def main(wpts):
 
     # loop through angles that are desired
     outer_start = time.time()
-    for i in range(330, 331, 30):
+    for i in range(0, 31, 15):
         # base filename
         fname_base = f'{fname_stub}_{i}'
         fname_img = Path(f'{fname_base}.tif')
