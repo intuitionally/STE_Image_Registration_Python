@@ -1,5 +1,6 @@
 import cv2
 import numpy as np
+import time
 
 show_plot = True
 
@@ -46,7 +47,7 @@ b_skip = 1
 # settings.listASearchStr = 'F:\software_development\STE_image_registration\output\apt_*rgb.tif'
 # settings.listASearchStr = 'F:\software_development\STE_image_registration\output\zebchop_*rgb.tif'
 # settings.listASearchStr = 'F:\software_development\STE_image_registration\sample_data\apartments\images\5cm\zebchop_*rgb.tif'
-a_fname = "C:\\Users\\rdgrldkb\\PycharmProjects\\STE_Image_Registration_Python\\output\\apartments_lynx_15.tif"
+a_fname = "C:\\Users\\rdgrldkb\\PycharmProjects\\STE_Image_Registration_Python\\output\\apartments_local_0.tif"
 # listA = dir_b_fullpath(settings.listASearchStr) TODO add back when we implement multiple image matching
 
 # 'B' frames of Lynx in this instance.
@@ -67,11 +68,26 @@ report_fname = f'{output_dir}_ste_reg_report.xml'
 
 matchCountList = []
 matchDescList = ''
+
+
+def imAdjust(x, a, b, c, d, gamma=1):
+    y = (((x - a) / (b - a)) ** gamma) * (d - c) + c
+    return y
+
+
+def writeMatchFile(fname, usgs, fmv):
+    with open(fname, 'w') as f:
+        f.write("Ai\tAj\tBi\tBj\n")
+        for i in range(0, len(usgs)):
+            f.write(f'{usgs[i, 0]}\t{usgs[i, 1]}\t{fmv[i, 0]}\t{fmv[i, 1]}')
+
+
+time_start = time.time()
 for i in range(0, 1, a_skip):
     # Read frame A and parse filename for description.
     # a_fname = string(listA{i})   # TODO add back when we implement multiple image matching
 
-    #Convert to gray scale
+    # Convert to gray scale
     img_a = cv2.imread(a_fname)
     img_a_gray = cv2.cvtColor(img_a, cv2.COLOR_BGR2GRAY)
     str_a = a_fname.split('\\')[-1].split('.')[0]
@@ -80,43 +96,45 @@ for i in range(0, 1, a_skip):
     # as I copied this code from there and didn't feel like changing all
     # the names.So from here on usgs is A frame.
     usgs = img_a_gray
-    #usgs = imAdjust(img_a_grey, stretchLim(img_a_grey, [0.0, 1])) #redundant?????
+    # usgs = imAdjust(img_a_grey, stretchLim(img_a_grey, [0.0, 1])) #redundant?????
 
     # Initialize empty placeholders for best matches.
-    bestInlierFMV =[]
-    bestInlierUSGS =[]
+    bestInlierFMV = []
+    bestInlierUSGS = []
     bestImgA = ''
     bestImgB = ''
     bestDesc = ''
 
-    for j in range (1, length(listB), b_skip):
+    for j in range(0, 1, b_skip):
 
         # Read frame B and parse filename for description.
-        fnameB = string(listB[j])
-        imB = imread(fnameB)
-        [~, strB] = fileparts(fnameB)
+        # b_fname = str(listB[j])
+        img_b = cv2.imread(b_fname)
+        img_b_gray = cv2.cvtColor(img_b, cv2.COLOR_BGR2GRAY)
+        str_b = b_fname.split('\\')[-1].split('.')[0]
 
         # Get rotation angles from filename.
-        temp = split(strA, '_')
-        rA = str2double(temp[2][2:end])
-        temp = split(strB, '_')
-        rB = str2double(temp[2][2: end])
+        temp = str_a.split('_')
+        print(f'stra {str_a} temp {temp}')
+        rA = float(temp[-1])
+        temp1 = str_b.split('_')
+        rB = float(temp1[-1])
 
         # Check angles to make it run faster,
         # if rB < rA, rB = rB + 360, end
         # if rB < rA + settings.aLowAngle, continue, end
         # if rB > rA + settings.aHighAngle, continue, end
 
-        angCheck = mod(abs(rA + settings.a2bAngle - rB), 360.0)
-        angCheck = abs(mod(rA + settings.a2bAngle, 360.0) - rB)
-        disp(sprintf("rA = #d, rB = #d, angCheck =  #d", rA, rB, angCheck))
+        angCheck = np.abs(rA + a2b_angle - rB) % 360.0
+        # angCheck = np.abs((rA + settings.a2bAngle) % 360.0 - rB)
+        print(f"rA = {rA}, rB = {rB}, angCheck =  {angCheck}")
 
-        if angCheck > settings.angleFilter:
-            continue
+        # if angCheck > angle_filter:
+        #     continue
 
-            # Display status message.
-            strDesc = sprintf("#s-#s", strA, strB)
-            disp(sprintf("Registering #s", strDesc))
+        # Display status message.
+        strDesc = f'{str_a} - {str_b}'
+        print(strDesc)
 
         # Convert to gray scale and stretch. See comment above...
         # fmv is just B frame
@@ -125,8 +143,9 @@ for i in range(0, 1, a_skip):
 
         # Detect KAZE features for image A. Other feature detectors are
         # available in Matlab(SURF, ORB, etc.) I've found KAZE works best
-        # for this type of work, but we probably should test others.     Should we test others???
-        detector = cv2.AKAZE.create()
+        # for this type of work, but we probably should test others. Should we test others???
+        detector = cv2.AKAZE.create(descriptor_type=cv2.AKAZE_DESCRIPTOR_MLDB_UPRIGHT,
+                                    threshold=0.0001)
 
         # detect and extract image A features
         (keyPtsUSGS, descUSGS) = detector.detectAndCompute(img_a_gray, None)
@@ -142,7 +161,7 @@ for i in range(0, 1, a_skip):
 
         good = []
         for m, n in matchPairs:
-            if m.distance < 0.9*n.distance:
+            if m.distance < 0.6*n.distance:
                 good.append([m])
 
         # Get points for matched features.
@@ -167,7 +186,7 @@ for i in range(0, 1, a_skip):
 
         dst_pts = np.float32([keyPtsFMV[m[0].trainIdx].pt for m in good])  # .reshape(-1, 1, 2)
         # Use estimateGeometricTransform to find the best matches from a lot of bad matches
-        tform, mask = cv2.findHomography(src_pts, dst_pts, cv2.RANSAC, 5)
+        tform, mask = cv2.findHomography(src_pts, dst_pts, cv2.RANSAC, ransacReprojThreshold=6)
         inliers = np.nonzero(mask.ravel().tolist())
         # print(mask)
         print(inliers)
@@ -183,67 +202,57 @@ for i in range(0, 1, a_skip):
         # 'MaxNumTrials', settings.MaxNumTrials,
         # 'Confidence', settings.Confidence,
         # 'MaxDistance', settings.MaxDistance)
-
-        # Start assembling results for summary
-        inlierCount = length(inlierFMV)
-        matchCountList[end + 1] = inlierCount
-        matchDescList[end + 1] = strDesc
-
-        # Display user message
-        print(f'Inliers:  {inlierCount}')
-
-        # If there are more inliers in the registration, make it the new "best" registration.
-        if inlierCount > length(bestInlierFMV):
-            bestInlierFMV = inlierFMV
-            bestInlierUSGS = inlierUSGS
-            bestImgA = strA
-            bestImgB = strB
-            bestDesc = strDesc
-
-
-        if settings.showPlot:
-            # Display inliers and write JPG output file
-            if ~exist('figInliers', 'var') | ~ishandle(figInliers):
-                figInliers = figure
-            figure(figInliers)
-            showMatchedFeatures(usgs, fmv, inlierUSGS, inlierFMV, 'montage')
-            title(sprintf("#s, #d inliers, #s", strDesc, inlierCount, settings.transformType), 'Interpreter', 'none')
-            fname_matches = fullfile(settings.strOutDir, sprintf("match_#s.jpg", strDesc))
-            saveas(gcf, fname_matches, 'jpeg')
-
-
-        if length(inlierFMV) < settings.minInliers:
-            continue
-
-        fname_matches = f'{output_dir}_match_{strDesc}s.jpg'
-        writeMatchFile(fname_matches, inliers.Location, inliers.Location)
-        # writeMatchFile(fname_matches, inlierUSGS.Location, inlierFMV.Location)
-
-
-    # Make sure we have sufficient inliers to write "best_match" file
-    if length(bestInlierFMV) < settings.minInliers:
-        continue
-
-    # Write output file for 'best' match with i, j for A and i, j for B.
-    fnameBestMatch = fullfile(settings.strOutDir, sprintf("best_match_#s.txt", bestDesc))
-    writeMatchFile(fnameBestMatch, bestInlierUSGS.Location, bestInlierFMV.Location)
+    #
+    #     # Start assembling results for summary
+        inlierCount = len(inliers)
+        #inlierCount = len(inlierFMV)
+    #     matchCountList.append(inlierCount)
+    #     matchDescList.append(strDesc)
+    #
+    #     # Display user message
+    #     print(f'Inliers:  {inlierCount}')
+    #
+    #     # If there are more inliers in the registration, make it the new "best" registration.
+    #     if inlierCount > len(bestInlierFMV):
+    #         bestInlierFMV = inliers
+    #         bestInlierUSGS = inliers
+    #         # bestInlierFMV = inlierFMV
+    #         # bestInlierUSGS = inlierUSGS
+    #         bestImgA = str_a
+    #         bestImgB = str_b
+    #         bestDesc = strDesc
+    #
+    #     if show_plot:
+    #         # Display inliers and write JPG output file
+    #         im3 = cv2.drawMatchesKnn(img_a, img_b, inliers, inliers, None, flags=2)
+    #         # showMatchedFeatures(usgs, fmv, inlierUSGS, inlierFMV, 'montage')
+    #         # title(sprintf("#s, #d inliers, #s", strDesc, inlierCount, transform_type), 'Interpreter', 'none')
+    #         fname_matches = f'{output_dir}_match_{strDesc}s.jpg'
+    #         cv2.imwrite(fname_matches, im3)
+    #
+    #     if len(inliers) < min_inliers:
+    #         continue
+    #
+    #     fname_matches = f'{output_dir}_match_{strDesc}s.jpg'
+    #     writeMatchFile(fname_matches, inliers.Location, inliers.Location)
+    #     # writeMatchFile(fname_matches, inlierUSGS.Location, inlierFMV.Location)
+    #
+    #
+    # # Make sure we have sufficient inliers to write "best_match" file
+    # if len(bestInlierFMV) < min_inliers:
+    #     continue
+    #
+    # # Write output file for 'best' match with i, j for A and i, j for B.
+    # fnameBestMatch = f'{output_dir}_best_match_{bestDesc}.txt'
+    # writeMatchFile(fnameBestMatch, bestInlierUSGS.Location, bestInlierFMV.Location)
 
 # Write summary file.
-fnameMatchCounts = fullfile(settings.strOutDir, "_match_counts.txt")
-fp = fopen(fnameMatchCounts, 'w')
-for i in range (1, length(matchCountList), 1):
-    fprintf(fp, "#s\t#.0f\n", matchDescList(i), matchCountList(i))
-fclose(fp)
+fnameMatchCounts = f'{output_dir}_match_counts.txt'
+with open(fnameMatchCounts, 'w') as f:
+    for i in range(0, len(matchCountList)):
+        f.write(f'{matchDescList[i]}\t{matchCountList[i]}')
 
-timing.timeTotal = synthImgTocStr(toc(ticTotal))
+time_end = time.time()
+time_total = time_end - time_start
+print(f'total time: {time_total}')
 
-writestruct(struct('settings', settings, 'timing', timing), settings.fnameReport)
-
-disp(timing)
-
-def writeMatchFile(fname, usgs, fmv):
-    fp = fopen(fname, 'w')
-    fprintf(fp, "Ai\tAj\tBi\tBj\n")
-    for i in range (1, size(usgs), 1):
-        fprintf(fp, "#.0f\t#.0f\t#.0f\t#.0f\n", usgs(i,:), fmv(i,:))
-    fclose(fp)
